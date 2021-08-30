@@ -85,6 +85,7 @@ class MainActivity : AppCompatActivity() {
                     oldData == newData
                 },
                 isSameData = { oldData, newData ->
+                    // 这里应该比对实际的内容, 但没有内容就这样写吧
                     oldData == newData
                 })
         }
@@ -94,6 +95,7 @@ class MainActivity : AppCompatActivity() {
                     oldData == newData
                 },
                 isSameData = { oldData, newData ->
+                    // 这里应该比对实际的内容, 但没有内容就这样写吧
                     oldData == newData
                 })
         }
