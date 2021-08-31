@@ -16,8 +16,8 @@ import com.ndhzs.diffutiltest.SimpleRvAdapter2
 class TitleItem(
     map: Map<Int, String>
 ) : SimpleRvAdapter2.VHItem<TitleItem.TitleVH, String>(
-    R.layout.item_title,
-    map
+    map,
+    R.layout.item_title
 ) {
     class TitleVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tv: TextView = itemView.findViewById(R.id.tv_title)
@@ -30,7 +30,7 @@ class TitleItem(
     override fun onCreate(holder: TitleVH, map: Map<Int, String>) {
     }
 
-    override fun onRefactor(holder: TitleVH, position: Int, data: String) {
-        holder.tv.text = data
+    override fun onRefactor(holder: TitleVH, position: Int, value: String) {
+        holder.tv.text = value
     }
 }

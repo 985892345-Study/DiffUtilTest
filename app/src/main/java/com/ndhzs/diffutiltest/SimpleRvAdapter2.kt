@@ -10,11 +10,40 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 
 /**
- * ...
+ * 实现像数组一样的直接添加不同类型的 item, 使用方法可以点击查看使用实例(最好看我本人写的界面)
+ *
+ * **WARNING:** 必须使用 [show] 方法来开始加载
+ *
+ * **NOTE:** 没显示? 可能是你 RecyclerView 的 layoutManager 没设置。。。。。。
+ * ```
+ * 本 Adapter 的实现涉及到了:
+ * 1、泛型擦除的解决(如何同时绑定多个不同类型的 DataBinding 或 ViewHolder)
+ * 2、官方推荐的 DiffUtil 刷新帮助类
+ * 3、带有三个参数的 onBindViewHolder 的使用
+ *
+ * 样例:
+ * mTitleItem = TitleItem(mTitleMap) // 用来显示标题
+ * mDataItem = DataItem(mDataMap)    // 用来显示每个标题下的数据
+ * mRecyclerView.adapter = SimpleRvAdapter()
+ *     .addItem(mTitleItem)
+ *     .addItem(mDataItem)
+ *     .show()
+ *
+ * 差分刷新使用方式:
+ * mTitleItem.diffRefreshAllItemMap(mNewTitleMap,  // 传入新的键值对数据
+ *     isSameName = { oldData, newData ->
+ *         oldData.id == newData.id  // 比对两个数据类的唯一 id (可以去看我方法中的注释)
+ *     },
+ *     isSameData = { oldData, newData ->
+ *         oldData == newData        // 比对两个数据类所有数据是否完全相同
+ *     }
+ * )
+ * mDataItem 与上面一样, 不做演示
+ * ```
  * @author 985892345 (Guo Xiangrui)
  * @email 2767465918@qq.com
- * @data 2021/8/29
- * @time 13:35
+ * @data 2021/5/31 (在开发邮票商城项目前在自己的项目中开发的, 后续进行了许多优化和修改)
+ * 开发邮票商城项目时间: 2021-8
  */
 class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
@@ -78,7 +107,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     }
 
     /**
-     * notifyDataSetChanged() 永远的神
+     * notifyDataSetChanged() 永远的神(但不建议使用)
      *
      * **NOTE:** 请在你**修改了**所有 Item 的 getItemCount() 后调用
      *
@@ -110,7 +139,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
      */
     private fun refreshAuto() {
         // 先检查全部的 Item 是否已经准备好了更新
-        mLayoutIdWithCallback.forEach { if (!it.value.item.__isPrepare) { return } }
+        mLayoutIdWithCallback.forEach { if (!it.value.item.__isPrepareRefresh) { return } }
         DiffUtil.calculateDiff(DiffRefresh()).dispatchUpdatesTo(this)
         mLayoutIdWithCallback.forEach { it.value.item.__refreshOver() }
     }
@@ -151,7 +180,8 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private var allItemCount = 0 // 所有 item 数量
     override fun getItemCount(): Int {
         /*
-        * 如果你发现这里
+        * 如果你发现这里有问题, 可能是你直接调用了 notifyDataSetChanged(),
+        * 请使用 Item 内部整合的 refreshAllItemMap() 代替
         * */
         return allItemCount
     }
@@ -189,10 +219,94 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         call?.onViewRecycled(holder)
     }
 
+    /**
+     * 网上的博客没有讲解过该方法, 只是在对于 RecyclerView 出现闪动时都推荐使用该方法, 但都没讲为什么
+     * ```
+     * 对于 RecyclerView 出现闪动时网上的解法是:
+     * 1、设置该方法为 true
+     * 2、重写 getItemId() 直接 return position
+     * ```
+     * 这种解法确实可以使调用 notifyDataSetChanged() 后不再出现闪动, 但你知道他的原理吗?
+     *
+     * 其实就是在刷新的时候通过 getItemId() 在缓存中查找是否拥有相同标识的 Item, 有的话就直接拿来用,
+     * 而不回调 onBindViewHolder(), 所以你没设置好的话, 就会与其中我整合的差分刷新出现问题, 尤其是在中间位置有数据被删除时
+     */
+    @Deprecated("已整合了差分刷新, 不建议再使用该方法", ReplaceWith(""))
+    override fun setHasStableIds(hasStableIds: Boolean) {
+        super.setHasStableIds(hasStableIds)
+    }
 
+    /**
+     * 原因可以看 [setHasStableIds]
+     */
+    @Deprecated("已整合了差分刷新, 不建议再使用该方法", ReplaceWith(""))
+    override fun getItemId(position: Int): Long {
+        return super.getItemId(position)
+    }
 
     class BindingVH(val binding: ViewDataBinding) : RecyclerView.ViewHolder(binding.root)
 
+
+
+    /*
+    * ===============================================================================================================
+    * 差分刷新的实现类
+    * */
+
+    private inner class DiffRefresh: DiffUtil.Callback() {
+        val oldItemCount = allItemCount
+        var newItemCount = 0
+        init {
+            mLayoutIdWithCallback.forEach {
+                newItemCount += it.value.item.__newMap.size
+            }
+            allItemCount = newItemCount
+        }
+        override fun getOldListSize(): Int = oldItemCount
+        override fun getNewListSize(): Int = newItemCount
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+            mLayoutIdWithCallback.forEach {
+                val item = it.value.item
+                val old = item.__oldMap.containsKey(oldItemPosition)
+                val new = item.__newMap.containsKey(newItemPosition)
+                // 这个说明两个 layoutId 相同, 就是指同一种类型的 ViewHolder, 再由你自己判断张三的位置在哪里
+                if (old && new) return item.__compareName(oldItemPosition, newItemPosition)
+                else if (old != new) return false
+            }
+            return false
+        }
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+            mLayoutIdWithCallback.forEach {
+                val item = it.value.item
+                if (item.__newMap.containsKey(newItemPosition)) {
+                    return item.__compareData(oldItemPosition, newItemPosition)
+                }
+            }
+            return false
+        }
+
+        override fun getChangePayload(oldItemPosition: Int, newItemPosition: Int): Any? {
+            mLayoutIdWithCallback.forEach {
+                val item = it.value.item
+                if (item.__newMap.containsKey(newItemPosition)) {
+                    return when (item.__refreshMode) {
+                        Mode.REFACTOR_THROUGH -> null
+                        Mode.REFACTOR_MILD, Mode.REFRESH -> item.__refreshMode
+                    }
+                }
+            }
+            return null
+        }
+    }
+
+
+
+    /*
+    * ==============================================================================================================
+    * Callback 类用于管理要用的方法(利用多态的思想), Callback 两个子类(BindingCallBack、ViewHolderCallBack)用于管理泛型
+    * */
     private abstract class Callback<T>(
         val item: Item<T>
     ) {
@@ -302,15 +416,37 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         }
     }
 
+
+    /*
+    * ===============================================================================================================
+    * 用于管理你的 Item, 就相当于一种 ViewHolder, 只是我将他进行了分离
+    * Item 中包含一个使用差分刷新的方法 refreshAllItemMap()
+    * */
+
     abstract class Item<T>(
-        val layoutId: Int,
         /** 内部变量, **禁止使用** */
-        var __newMap: Map<Int, T>
+        var __newMap: Map<Int, T>,
+        val layoutId: Int
     ) {
+        constructor(
+            list: List<T>,
+            startPosition: Int,
+            layoutId: Int
+        ) : this(
+            listToMap(list, startPosition),
+            layoutId
+        )
+        companion object {
+            private fun <T> listToMap(list: List<T>, startPosition: Int): Map<Int, T> {
+                val map = HashMap<Int, T>(list.size)
+                for (i in list.indices) { map[i + startPosition] = list[i] }
+                return map
+            }
+        }
 
         lateinit var adapter: SimpleRvAdapter2
         /** 内部变量, **禁止使用** */
-        internal var __isPrepare = false
+        internal var __isPrepareRefresh = false
         /** 内部变量, **禁止使用** */
         internal var __refreshMode = Mode.REFACTOR_MILD
         /** 内部变量, **禁止使用** */
@@ -320,7 +456,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         /** 内部变量, **禁止使用** */
         internal var __isSameData: (oldData: T, newData: T) -> Boolean = { _, _ ->  false }
 
-        /** 内部方法, **禁止使用** */
+        /** 内部方法, **禁止调用** */
         fun __compareName(oldItemPosition: Int, newItemPosition: Int): Boolean {
             return __isSameName(__oldMap.getValue(oldItemPosition), __newMap.getValue(newItemPosition))
         }
@@ -332,8 +468,8 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
         /** 内部方法, **禁止调用** */
         fun __refreshOver() {
-            if (__isPrepare) {
-                __isPrepare = false
+            if (__isPrepareRefresh) {
+                __isPrepareRefresh = false
                 __refreshMode = Mode.REFACTOR_MILD
                 __oldMap.clear()
                 __oldMap.putAll(__newMap)
@@ -348,30 +484,41 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          *          新数据      旧数据
          * 名字:     张三        张三
          * 学号:     12345      12345
-         * 行为:     吃饭        打球
+         * 场地:     食堂        寝室
          * 安排:     上课        洗澡
          * 其他：     111        222
          *
          * 如上所示:
-         * 1、对于 idSameName 就应该返回新旧数据的 “名字” 或者 “学号” 是否相同, 因为这是两个数据之间的唯一标识符
-         * 2、对于 isSameData 就应该返回新旧数据的 “行为” 和  “安排” 和  “其他”  是否 都 相同
+         * 1、对于 idSameName 就应该返回新旧数据的 “名字” 或者 “学号” 是否相同, 因为这是两个数据之间的唯一 id(可能名字会有重复)
+         * 2、对于 isSameData 就应该返回新旧数据的 “场地” 和  “安排” 和  “其他”  是否 都 相同
+         * 2、如果对于某些数据没有名字或学号这种东西, 也可以以那些不会发生改变的数据来作为唯一 id
          * ```
          *
          * @param isSameName 比对两个数据的唯一 id 是否相同
          * @param isSameData 比对其他数据是否相同
          */
-        fun refreshAllItemMap(
+        fun diffRefreshAllItemMap(
             map: Map<Int, T>,
             isSameName: (oldData: T, newData: T) -> Boolean,
             isSameData: (oldData: T, newData: T) -> Boolean,
-            isRefactor: Mode = Mode.REFACTOR_MILD
+            refreshMode: Mode = Mode.REFACTOR_MILD
         ) {
             __newMap = map
-            __refreshMode = isRefactor
-            __isPrepare = true
+            __refreshMode = refreshMode
+            __isPrepareRefresh = true
             __isSameName = isSameName
             __isSameData = isSameData
             adapter.refreshAuto()
+        }
+        /** 用于传入数据为 list **/
+        fun diffRefreshAllItemMap(
+            list: List<T>,
+            startPosition: Int,
+            isSameName: (oldData: T, newData: T) -> Boolean,
+            isSameData: (oldData: T, newData: T) -> Boolean,
+            refreshMode: Mode = Mode.REFACTOR_MILD
+        ) {
+            diffRefreshAllItemMap(listToMap(list, startPosition), isSameName, isSameData, refreshMode)
         }
 
         /**
@@ -389,12 +536,21 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
                 adapter.refreshItem(it.key, refreshMode)
             }
         }
+        /** 用于传入数据为 list **/
+        fun refreshSelfMap(
+            list: List<T>,
+            startPosition: Int,
+            refreshMode: Mode = Mode.REFACTOR_MILD
+        ) { refreshSelfMap(listToMap(list, startPosition), refreshMode) }
     }
 
     /**
      * 用于添加 DataBinding 的 item
+     * @param map position 与 T 的键值对关系, 其中 position 是在布局中的位置
      */
-    abstract class DBItem<DB: ViewDataBinding, T>(@LayoutRes layoutId: Int, map: Map<Int, T>) : Item<T>(layoutId, map) {
+    abstract class DBItem<DB: ViewDataBinding, T> : Item<T> {
+        constructor(map: Map<Int, T>, @LayoutRes layoutId: Int) : super(map, layoutId)
+        constructor(list: List<T>, startPosition: Int, @LayoutRes layoutId: Int) : super(list, startPosition, layoutId)
         /**
          * 在 item 创建时的回调, 建议在此处进行一些只需进行一次的操作, 如: 设置点击监听、设置用于 item 整个生命周期的对象
          *
@@ -418,7 +574,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          *
          * **WARNING:** ***禁止在这里使用 kotlin 的扩展插件只使用 layoutId 得到 View***
          *
-         * **点击事件等回调不能写在这里**,
+         * **WARNING:** **点击事件等回调不能写在这里**,
          * ```
          * 原因在于: https://blog.csdn.net/weixin_28318011/article/details/112872952
          * ```
@@ -432,7 +588,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          *
          * **上方 WARNING 原因请了解 RecyclerView 的真正回调流程**
          */
-        abstract fun onRefactor(binding: DB, holder: BindingVH, position: Int, data: T)
+        abstract fun onRefactor(binding: DB, holder: BindingVH, position: Int, value: T)
 
         /**
          * 特殊刷新, 使用 [Mode.REFRESH] 后刷新当前 item 的回调
@@ -442,7 +598,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          * 因为离开后再回来就只会回调 refactor(), 解决办法是数据修改后就更改全局数组, 在 refactor() 中直接取数组中的值
          * ```
          */
-        open fun onSpecialRefresh(binding: DB, holder: BindingVH, position: Int, data: T) {}
+        open fun onSpecialRefresh(binding: DB, holder: BindingVH, position: Int, value: T) {}
 
         /**
          * 当这个 holder 显示在屏幕上时
@@ -462,9 +618,11 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     /**
      * 用于添加 ViewHolder 的 item
+     * @param map position 与 T 的键值对关系, 其中 position 是在布局中的位置
      */
-    abstract class VHItem<VH: RecyclerView.ViewHolder, T>(@LayoutRes layoutId: Int, map: Map<Int, T>) : Item<T>(layoutId, map) {
-
+    abstract class VHItem<VH: RecyclerView.ViewHolder, T> : Item<T> {
+        constructor(map: Map<Int, T>, @LayoutRes layoutId: Int) : super(map, layoutId)
+        constructor(list: List<T>, startPosition: Int, @LayoutRes layoutId: Int) : super(list, startPosition, layoutId)
         /**
          * 返回一个新的 ViewHolder，**请不要返回相同的对象**
          */
@@ -493,7 +651,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          *
          * **WARNING:** ***禁止在这里使用 kotlin 的扩展插件只使用 layoutId 得到 View***
          *
-         * **点击事件等回调不能写在这里**,
+         * **WARNING:** **点击事件等回调不能写在这里**,
          * ```
          * 原因在于: https://blog.csdn.net/weixin_28318011/article/details/112872952
          * ```
@@ -507,7 +665,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          *
          * **上方 WARNING 原因请了解 RecyclerView 的真正回调流程**
          */
-        abstract fun onRefactor(holder: VH, position: Int, data: T)
+        abstract fun onRefactor(holder: VH, position: Int, value: T)
 
         /**
          * 特殊刷新, 使用 [Mode.REFRESH] 后刷新当前 item 的回调
@@ -517,7 +675,7 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
          * 因为离开后再回来就只会回调 onRefactor(), 解决办法是数据修改后就更改全局数组, 在 onRefactor() 中直接取数组中的值
          * ```
          */
-        open fun onSpecialRefresh(holder: VH, position: Int, data: T) {}
+        open fun onSpecialRefresh(holder: VH, position: Int, value: T) {}
 
         /**
          * 当这个 holder 显示在屏幕上时
@@ -535,56 +693,12 @@ class SimpleRvAdapter2 : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         open fun onViewRecycled(holder: VH) {}
     }
 
-    private inner class DiffRefresh: DiffUtil.Callback() {
-        val oldItemCount = allItemCount
-        var newItemCount = 0
-        init {
-            mLayoutIdWithCallback.forEach {
-                newItemCount += it.value.item.__newMap.size
-            }
-            allItemCount = newItemCount
-        }
-        override fun getOldListSize(): Int = oldItemCount
-        override fun getNewListSize(): Int = newItemCount
 
-        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-            mLayoutIdWithCallback.forEach {
-                val item = it.value.item
-                val old = item.__oldMap.containsKey(oldItemPosition)
-                val new = item.__newMap.containsKey(newItemPosition)
-                // 这个说明两个 layoutId 相同, 就是指同一种类型的 ViewHolder
-                if (old && new) {
-                    return item.__compareName(oldItemPosition, newItemPosition)
-                }else if (old != new) {
-                    return false
-                }
-            }
-            return false
-        }
 
-        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-            mLayoutIdWithCallback.forEach {
-                val item = it.value.item
-                if (item.__newMap.containsKey(newItemPosition)) {
-                    return item.__compareData(oldItemPosition, newItemPosition)
-                }
-            }
-            return false
-        }
-
-        override fun getChangePayload(oldItemPosition: Int, newItemPosition: Int): Any? {
-            mLayoutIdWithCallback.forEach {
-                val item = it.value.item
-                if (item.__newMap.containsKey(newItemPosition)) {
-                    return when (item.__refreshMode) {
-                        Mode.REFACTOR_THROUGH -> null
-                        Mode.REFACTOR_MILD, Mode.REFRESH -> item.__refreshMode
-                    }
-                }
-            }
-            return null
-        }
-    }
+    /*
+    * ===============================================================================================================
+    * 刷新方式的选择, 想了解原理的话可以网上搜索 RecyclerView 带有三个参数的 onBindViewHolder 方法
+    * */
 
     enum class Mode {
         /**

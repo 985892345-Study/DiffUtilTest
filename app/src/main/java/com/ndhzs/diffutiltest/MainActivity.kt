@@ -3,21 +3,18 @@ package com.ndhzs.diffutiltest
 import android.annotation.SuppressLint
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.text.Editable
-import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.ndhzs.diffutiltest.item.ListItem
 import com.ndhzs.diffutiltest.item.TitleItem
 
 class MainActivity : AppCompatActivity() {
 
-    val s1 = "1.2.3.4.5.6.7.8.9"
-    val s2 = "10.11.12.13.14.15.16.17.18"
+    private val s1 = "1.2.3.4.5.6.7.8.9"
+    private val s2 = "10.11.12.13.14.15.16.17.18"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +59,16 @@ class MainActivity : AppCompatActivity() {
             .addItem(mTitleItem)
             .addItem(mListItem)
             .show()
+        /*
+        * 如果你发现修改一个值后会有闪动, 其实是因为我用 String 直接判断 item 是否相同的问题
+        * 闪动的原因在于因为新的 item 与旧的 item 不是同一个 item, 所以它就先 remove 再 add
+        * 你可以把下面的取消 Rv 动画的代码取消注释, 它就不会闪了
+        * */
+//        val animator = recyclerView.itemAnimator
+//        if (animator != null) {
+//            animator.addDuration = 0
+//            animator.removeDuration = 0
+//        }
     }
 
     private val mTitleMap = HashMap<Int, String>()
@@ -80,7 +87,7 @@ class MainActivity : AppCompatActivity() {
             mListMap[list1.size + 2 + i] = list2[i]
         }
         if (this::mTitleItem.isInitialized) {
-            mTitleItem.refreshAllItemMap(mTitleMap,
+            mTitleItem.diffRefreshAllItemMap(mTitleMap,
                 isSameName = { oldData, newData ->
                     oldData == newData
                 },
@@ -90,7 +97,7 @@ class MainActivity : AppCompatActivity() {
                 })
         }
         if (this::mListItem.isInitialized) {
-            mListItem.refreshAllItemMap(mListMap,
+            mListItem.diffRefreshAllItemMap(mListMap,
                 isSameName = { oldData, newData ->
                     oldData == newData
                 },
