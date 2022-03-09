@@ -30,7 +30,6 @@
         app:layout_constraintStart_toStartOf="@+id/editText2"
         tools:ignore="LabelFor" />
 
-
     <EditText
         android:id="@+id/editText2"
         android:layout_width="0dp"

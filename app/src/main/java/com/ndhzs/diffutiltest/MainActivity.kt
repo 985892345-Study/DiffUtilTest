@@ -1,6 +1,7 @@
 package com.ndhzs.diffutiltest
 
 import android.annotation.SuppressLint
+import android.app.Dialog
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.Button
@@ -28,7 +29,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetTextI18n")
     private fun initView() {
         val textView: TextView = findViewById(R.id.textView)
-        textView.text = "尽量保证不要出现重复数字, 且分割符为英文句号“.”"
+        textView.text = "尽量保证不要出现重复数字, 且分割符为英文句号“.”，上面和小面的可以混合在一起的哦"
 
         val editText1: EditText = findViewById(R.id.editText1)
         val editText2: EditText = findViewById(R.id.editText2)
